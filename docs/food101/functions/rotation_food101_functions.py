@@ -73,7 +73,7 @@ def LF_experiment(
 
         # Change data angle for second task
         tmp_data = train_x2.copy()
-        _tmp_ = np.zeros((32, 32, 3), dtype=int)
+        _tmp_ = np.zeros((32, 32, 1), dtype=int)
         total_data = tmp_data.shape[0]
 
         for i in range(total_data):
@@ -135,7 +135,7 @@ def LF_experiment(
 def image_aug(pic, angle, centroid_x=23, centroid_y=23, win=16, scale=1.45):
     # Calculates scaled dimensions of image
     im_sz = int(np.floor(pic.shape[0] * scale))
-    pic_ = np.uint8(np.zeros((im_sz, im_sz, 3), dtype=int))
+    pic_ = np.uint8(np.zeros((im_sz, im_sz, 1), dtype=int))
 
     # Uses zoom function from scipy.ndimage to zoom into the image
     pic_[:, :, 0] = ndimage.zoom(pic[:, :, 0], scale)
