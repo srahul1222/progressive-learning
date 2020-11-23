@@ -93,7 +93,7 @@ def label_shuffle_experiment(
 
         # If task number is 0, add task. Else, add a transformer for the task
         if task_num == 0:
-            rand_idx = np.random.randint(0, 12000, 6000)
+            rand_idx = np.random.randint(0, 12000, 60)
             #print("Added task")
             learner.add_task(
                 X = train_x[rand_idx, :],
@@ -111,7 +111,7 @@ def label_shuffle_experiment(
                 task_id=0,
             )
         else:
-            rand_idx = np.random.randint(0, 12000, 6000)
+            rand_idx = np.random.randint(0, 12000, 60)
             #print("Adding transformer")
             learner.add_transformer(
                 X = train_x[((task_num * 12000) + rand_idx), :],
