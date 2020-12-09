@@ -8,13 +8,13 @@ import sys
 from proglearn.forest import LifelongClassificationForest
 
 
-def run_bte_exp(data_x, data_y, num_points_per_task, ntrees=30, slot=0):
+def run_bte_exp(data_x, data_y, which_task, ntrees=30, shift=0):
     
     df_total = []
     
-    for shift in range(10):
+    for slot in range(10): # Rotates the batch of training samples that are used from each class in each task
         train_x, train_y, test_x, test_y = cross_val_data(
-            data_x, data_y, slot, shift
+            data_x, data_y, shift, slot
         )
 
         # Reshape the data 
@@ -27,9 +27,9 @@ def run_bte_exp(data_x, data_y, num_points_per_task, ntrees=30, slot=0):
             test_x,
             test_y,
             ntrees,
-            slot,
             shift,
-            num_points_per_task,
+            slot,
+            which_task,
             acorn=12345,
         )
         
@@ -38,7 +38,7 @@ def run_bte_exp(data_x, data_y, num_points_per_task, ntrees=30, slot=0):
     return df_total
 
 
-def cross_val_data(data_x, data_y, slot, shift, total_cls=100):
+def cross_val_data(data_x, data_y, shift, slot, total_cls=100):
     # Creates copies of both data_x and data_y so that they can be modified without affecting the original sets
     x = data_x.copy()
     y = data_y.copy()
@@ -51,26 +51,33 @@ def cross_val_data(data_x, data_y, slot, shift, total_cls=100):
         ## The elements of indx are randomly shuffled
         #random.shuffle(indx)
         
-        # 900 training data points per class
-        tmp_x = np.concatenate((x[indx[0:(slot*100)], :], x[indx[((slot+1)*100):1000], :]), axis=0)
-        tmp_y = np.concatenate((y[indx[0:(slot*100)]], y[indx[((slot+1)*100):1000]]), axis=0)
+        # 900 available training data points per class
+        # Chooses all samples other than those in the testing batch
+        tmp_x = np.concatenate((x[indx[0:(shift*100)], :], x[indx[((shift+1)*100):1000], :]), axis=0)
+        tmp_y = np.concatenate((y[indx[0:(shift*100)]], y[indx[((shift+1)*100):1000]]), axis=0)
         
         if i == 0:
             # 90 training data points per class
-            train_x = tmp_x[(shift*90):((shift+1)*90)]
-            train_y = tmp_y[(shift*90):((shift+1)*90)]
+            # Rotates which set of 90 samples from each class is chosen for training each task
+            # With 10 classes per task, total of 900 training samples per task
+            train_x = tmp_x[(slot*90):((slot+1)*90)]
+            train_y = tmp_y[(slot*90):((slot+1)*90)]
 
             # 100 testing data points per class
-            test_x = x[indx[(slot*100):((slot+1)*100)], :]
-            test_y = y[indx[(slot*100):((slot+1)*100)]]
+            # Batch for testing set is rotated each time
+            test_x = x[indx[(shift*100):((shift+1)*100)], :]
+            test_y = y[indx[(shift*100):((shift+1)*100)]]
         else:
-            # 900 training data points per class
-            train_x = np.concatenate((train_x, tmp_x[(shift*90):((shift+1)*90)]), axis=0)
-            train_y = np.concatenate((train_y, tmp_y[(shift*90):((shift+1)*90)]), axis=0)
+            # 90 training data points per class
+            # Rotates which set of 90 samples from each class is chosen for training each task
+            # With 10 classes per task, total of 900 training samples per task
+            train_x = np.concatenate((train_x, tmp_x[(slot*90):((slot+1)*90)]), axis=0)
+            train_y = np.concatenate((train_y, tmp_y[(slot*90):((slot+1)*90)]), axis=0)
 
             # 100 testing data points per class
-            test_x = np.concatenate((test_x, x[indx[(slot*100):((slot+1)*100)], :]), axis=0)
-            test_y = np.concatenate((test_y, y[indx[(slot*100):((slot+1)*100)]]), axis=0)
+            # Batch for testing set is rotated each time
+            test_x = np.concatenate((test_x, x[indx[(shift*100):((shift+1)*100)], :]), axis=0)
+            test_y = np.concatenate((test_y, y[indx[(shift*100):((shift+1)*100)]]), axis=0)
 
     return train_x, train_y, test_x, test_y
 
@@ -82,9 +89,9 @@ def bte_experiment(
     test_x,
     test_y,
     ntrees,
-    slot,
     shift,
-    num_points_per_task,
+    slot,
+    which_task,
     acorn=None,
 ):
 
@@ -95,61 +102,53 @@ def bte_experiment(
     # Declare the progressive learner model (L2F)
     learner = LifelongClassificationForest()
 
-    for t_num in range(0,10):
-        #task_num = 9 - t_num ==> for calculating FTE
-        task_num = t_num
+    for task_num in range((which_task - 1),10): 
         accuracy_per_task = []
-        print("Starting Task {} For Slot {} For Shift {}".format(task_num, slot, shift))
+        print("Starting Task {} For Shift {} For Slot {}".format(task_num, shift, slot))
         if acorn is not None:
             np.random.seed(acorn)
 
         # If task number is 0, add task. Else, add a transformer for the task
-        if task_num == 0:
-            #rand_idx = np.random.randint(0, 9000, num_points_per_task)
-            #print("Added task")
+        if task_num == (which_task - 1): 
             learner.add_task(
                 X = train_x[(task_num*900):((task_num + 1)*900)],
                 y = train_y[(task_num*900):((task_num + 1)*900)],
                 task_id=0,
             )
+            
+            t_num = 0
+            while t_num < task_num:
+                learner.add_transformer(
+                    X = train_x[(t_num*900):((t_num + 1)*900)],
+                    y = train_y[(t_num*900):((t_num + 1)*900)],
+                )
+                t_num = t_num + 1
+            
         else:
-            #rand_idx = np.random.randint(0, 9000, num_points_per_task)
-            #print("Adding transformer")
             learner.add_transformer(
                 X = train_x[(task_num*900):((task_num + 1)*900)],
                 y = train_y[(task_num*900):((task_num + 1)*900)],
             )
 
         # Make a prediction on task 0 using the trained learner on test data
-        llf_task = learner.predict(test_x[0:1000, :], task_id=0)
-        acc = np.mean(llf_task == test_y[0:1000])    
+        llf_task = learner.predict(test_x[((which_task - 1) * 1000):(which_task * 1000), :], task_id=0) 
+        acc = np.mean(llf_task == test_y[((which_task - 1) * 1000):(which_task * 1000)]) 
         accuracies_across_tasks.append(acc)
         print("Accuracy Across Tasks: {}".format(accuracies_across_tasks))
 
-    df["task"] = range(1, 11)
+    df["task"] = range(which_task, 11) 
     df["task_accuracy"] = accuracies_across_tasks
 
     return df
 
-
-def get_bte(err):
-    bte = []
-
-    for i in range(10):
-        bte.append(err[0] / err[i])
-
-    return bte
-
-
-def plot_bte(btes):
+def plot_bte(btes, which_task):
     # Initialize the plot and color
     clr = ["#00008B"]
     c = sns.color_palette(clr, n_colors=len(clr))
     fig, ax = plt.subplots(1, 1, figsize=(10, 8))
 
     # Plot the results
-    ax.plot(np.arange(1, 11), btes, c=c[0], label="L2F", linewidth=3)
-
+    ax.plot(np.arange(which_task, 11), btes, c=c[0], label="L2F", linewidth=3)
     # Format the plot, and show result
     plt.ylim(0.92, 1.16)
     plt.xlim(1, 10)
